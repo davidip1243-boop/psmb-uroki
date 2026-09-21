@@ -1,0 +1,7 @@
+{
+  "name": "psmb-uroki",
+  "private": true,
+  "scripts": {
+    "build": "mkdir -p public && cp -R dist/. public/"
+  }
+}
