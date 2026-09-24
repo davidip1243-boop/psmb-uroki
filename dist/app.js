@@ -11,7 +11,7 @@ const classes = [...new Set(DATA.flatMap(d => d.lessons.flatMap(p => p.lessons.m
 
 function normalize(v){return String(v||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim()}
 function subjectParts(raw){const parts=String(raw).split('\n').map(s=>s.trim()).filter(Boolean); return {title:parts[0]||raw, detail:parts.slice(1).join(' · ')}}
-function displayPeriod(period){const match=String(period).match(/^(\d+)(\s*урок)?/i); return match ? String(Number(match[1])+1) : String(period).replace(' урок','')}
+function displayPeriod(period){const match=String(period).match(/^(\d+)(\s*урок)?/i); return match ? match[1] : String(period).replace(' урок','')}
 function renderClassList(){
   classList.innerHTML = '<button class="class-pill all active" data-class="all">Все классы <span>⌘</span></button>' + classes.map(c=>'<button class="class-pill" data-class="'+c+'">'+c+' класс</button>').join('');
   classList.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{selectedClass=btn.dataset.class; render()}));
@@ -22,10 +22,13 @@ function renderTabs(){
 }
 function getMatches(){
   const q=normalize(search.value);
-  return DATA.filter(d=>selectedDay==='all'||d.key===selectedDay).flatMap(d=>d.lessons.flatMap(p=>p.lessons.filter(l=>{
-    const hay=normalize([d.day,p.period,p.time,l.class,l.subject,l.room].join(' '));
-    return (selectedClass==='all'||l.class===selectedClass)&&(!q||hay.includes(q));
-  }).map(l=>({day:d,...p,lesson:l}))));
+  return DATA.filter(d=>selectedDay==='all'||d.key===selectedDay).flatMap(d=>{
+    const lessons=d.lessons.flatMap(p=>p.lessons.filter(l=>selectedClass==='all'||l.class===selectedClass).map(l=>({day:d,...p,lesson:l})));
+    return lessons.map((item,index)=>({...item,displayPeriod:selectedClass==='all'?null:String(index)})).filter(item=>{
+      const hay=normalize([d.day,item.period,item.time,item.lesson.class,item.lesson.subject,item.lesson.room].join(' '));
+      return !q||hay.includes(q);
+    });
+  });
 }
 function render(){
   renderClassList(); renderTabs();
@@ -41,10 +44,10 @@ function render(){
 }
 function card(item){
   const s=subjectParts(item.lesson.subject);
-  return '<article class="lesson-card"><div class="card-top"><span class="date-tag">'+item.day.short+' · '+item.day.key+' сен.</span><span class="period">'+displayPeriod(item.period)+'</span></div><h3>'+s.title+'</h3><div class="teacher">'+(s.detail||'')+'</div><div class="card-meta"><span class="meta-icon">◷</span>'+item.time+'<span class="meta-sep">·</span><b>'+item.lesson.class+' кл.</b>'+(item.lesson.room?'<span class="meta-sep">·</span><span>каб. '+item.lesson.room+'</span>':'')+'</div></article>'
+  return '<article class="lesson-card"><div class="card-top"><span class="date-tag">'+item.day.short+' · '+item.day.key+' сен.</span><span class="period">'+(item.displayPeriod??displayPeriod(item.period))+'</span></div><h3>'+s.title+'</h3><div class="teacher">'+(s.detail||'')+'</div><div class="card-meta"><span class="meta-icon">◷</span>'+item.time+'<span class="meta-sep">·</span><b>'+item.lesson.class+' кл.</b>'+(item.lesson.room?'<span class="meta-sep">·</span><span>каб. '+item.lesson.room+'</span>':'')+'</div></article>'
 }
 function dayColumn(day){
-  const lessons=day.lessons.flatMap(p=>p.lessons.filter(l=>selectedClass==='all'||l.class===selectedClass).map(l=>({day,...p,lesson:l})));
+  const lessons=day.lessons.flatMap(p=>p.lessons.filter(l=>selectedClass==='all'||l.class===selectedClass).map(l=>({day,...p,lesson:l}))).map((item,index)=>({...item,displayPeriod:selectedClass==='all'?null:String(index)}));
   return '<section class="day-column"><div class="day-heading"><span>'+day.short+'</span><strong>'+day.key+' сентября</strong><em>'+lessons.length+' уроков</em></div><div class="day-lessons">'+(lessons.length?lessons.map(card).join(''):'<div class="day-empty">Нет уроков</div>')+'</div></section>'
 }
 search.addEventListener('input',render);
