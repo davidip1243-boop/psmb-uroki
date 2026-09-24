@@ -11,6 +11,7 @@ const classes = [...new Set(DATA.flatMap(d => d.lessons.flatMap(p => p.lessons.m
 
 function normalize(v){return String(v||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim()}
 function subjectParts(raw){const parts=String(raw).split('\n').map(s=>s.trim()).filter(Boolean); return {title:parts[0]||raw, detail:parts.slice(1).join(' · ')}}
+function displayPeriod(period){const match=String(period).match(/^(\d+)(\s*урок)?/i); return match ? String(Number(match[1])+1) : String(period).replace(' урок','')}
 function renderClassList(){
   classList.innerHTML = '<button class="class-pill all active" data-class="all">Все классы <span>⌘</span></button>' + classes.map(c=>'<button class="class-pill" data-class="'+c+'">'+c+' класс</button>').join('');
   classList.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{selectedClass=btn.dataset.class; render()}));
@@ -40,7 +41,7 @@ function render(){
 }
 function card(item){
   const s=subjectParts(item.lesson.subject);
-  return '<article class="lesson-card"><div class="card-top"><span class="date-tag">'+item.day.short+' · '+item.day.key+' сен.</span><span class="period">'+item.period.replace(' урок','')+'</span></div><h3>'+s.title+'</h3><div class="teacher">'+(s.detail||'')+'</div><div class="card-meta"><span class="meta-icon">◷</span>'+item.time+'<span class="meta-sep">·</span><b>'+item.lesson.class+' кл.</b>'+(item.lesson.room?'<span class="meta-sep">·</span><span>каб. '+item.lesson.room+'</span>':'')+'</div></article>'
+  return '<article class="lesson-card"><div class="card-top"><span class="date-tag">'+item.day.short+' · '+item.day.key+' сен.</span><span class="period">'+displayPeriod(item.period)+'</span></div><h3>'+s.title+'</h3><div class="teacher">'+(s.detail||'')+'</div><div class="card-meta"><span class="meta-icon">◷</span>'+item.time+'<span class="meta-sep">·</span><b>'+item.lesson.class+' кл.</b>'+(item.lesson.room?'<span class="meta-sep">·</span><span>каб. '+item.lesson.room+'</span>':'')+'</div></article>'
 }
 function dayColumn(day){
   const lessons=day.lessons.flatMap(p=>p.lessons.filter(l=>selectedClass==='all'||l.class===selectedClass).map(l=>({day,...p,lesson:l})));
