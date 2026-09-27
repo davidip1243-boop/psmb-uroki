@@ -7,12 +7,15 @@ const activeClassEl = document.querySelector('#activeClass');
 const resultCount = document.querySelector('#resultCount');
 const appShell = document.querySelector('.app-shell');
 const main = document.querySelector('.main');
+const sidebar = document.querySelector('.sidebar');
 const todayBtn = document.querySelector('#todayBtn');
 const homeView = document.createElement('section');
 homeView.className = 'home-view';
 homeView.id = 'homeView';
 main.prepend(homeView);
 appShell.classList.add('home-mode');
+function syncSidebar(){if(sidebar)sidebar.style.display=appShell.classList.contains('home-mode')?'none':''}
+syncSidebar();
 const homeBtn = document.createElement('button');
 homeBtn.className = 'home-btn';
 homeBtn.type = 'button';
@@ -38,8 +41,8 @@ function renderHome(){
   homeView.innerHTML='<div class="home-kicker">ШКОЛЬНЫЙ ПОРТАЛ</div><div class="home-heading"><div><p class="home-greeting">'+greeting+' 👋</p><h1>Выбери свой класс</h1><p class="home-subtitle">Открой расписание сразу для нужного класса.</p></div><div class="home-date">'+date+'</div></div><div class="grade-grid" id="gradeGrid">'+Array.from({length:11},(_,i)=>{const grade=i+1;const group=grade<5?'Младшая школа':grade<10?'Средняя школа':'Старшая школа';return '<button class="grade-card" type="button" data-grade="'+grade+'"><span class="grade-number">'+grade+'</span><span class="grade-label">класс</span><small>'+group+'</small><span class="grade-arrow">→</span></button>'}).join('')+'</div><p class="home-note">Расписание обновляется из школьной таблицы при каждой загрузке страницы.</p>';
   homeView.querySelectorAll('[data-grade]').forEach(button=>button.addEventListener('click',()=>openSchedule(button.dataset.grade)));
 }
-function openSchedule(grade){selectedClass=String(grade); selectedDay='all'; search.value=''; appShell.classList.remove('home-mode'); render()}
-function openHome(){selectedClass='all'; selectedDay='all'; search.value=''; appShell.classList.add('home-mode'); renderHome()}
+function openSchedule(grade){selectedClass=String(grade); selectedDay='all'; search.value=''; appShell.classList.remove('home-mode'); syncSidebar(); render()}
+function openHome(){selectedClass='all'; selectedDay='all'; search.value=''; appShell.classList.add('home-mode'); syncSidebar(); renderHome()}
 function parseCsv(text){
   const rows=[]; let row=[], cell='', quoted=false;
   for(let i=0;i<text.length;i++){
@@ -128,7 +131,7 @@ function dayColumn(day){
 }
 search.addEventListener('input',render);
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();search.focus()}});
-todayBtn.addEventListener('click',()=>{selectedDay=DATA[0]?.key||'21';appShell.classList.remove('home-mode');render()});
+todayBtn.addEventListener('click',()=>{selectedDay=DATA[0]?.key||'21';appShell.classList.remove('home-mode');syncSidebar();render()});
 homeBtn.addEventListener('click',openHome);
 rebuildClasses();
 render();
