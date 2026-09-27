@@ -26,6 +26,10 @@ const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy
 function normalize(v){return String(v||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim()}
 function subjectParts(raw){const parts=String(raw).split('\n').map(s=>s.trim()).filter(Boolean); return {title:parts[0]||raw, detail:parts.slice(1).join(' · ')}}
 function displayPeriod(period){const match=String(period).match(/^(\d+)(\s*урок)?/i); return match ? match[1] : String(period).replace(' урок','')}
+function dayDateParts(day){const match=String(day||'').match(/(\d{1,2})\s+([А-ЯЁа-яё]+)/); return match?{day:Number(match[1]),month:match[2]}:null}
+function dayDateLabel(day){const parts=dayDateParts(day.day||day); return parts?parts.day+' '+parts.month:String(day.key||'')}
+function weekRangeLabel(){const first=DATA[0]&&dayDateParts(DATA[0].day),last=DATA[DATA.length-1]&&dayDateParts(DATA[DATA.length-1].day); if(!first||!last)return 'Расписание онлайн'; return first.month===last.month?first.day+'–'+last.day+' '+last.month:first.day+' '+first.month+' – '+last.day+' '+last.month}
+function updateWeekMeta(){const range=weekRangeLabel(); const brandRange=document.querySelector('.brand small'); const eyebrow=document.querySelector('.eyebrow'); if(brandRange)brandRange.textContent=range; if(eyebrow)eyebrow.textContent='ШКОЛЬНЫЙ ПОРТАЛ / '+range}
 function rebuildClasses(){classes=[...new Set(DATA.flatMap(d=>d.lessons.flatMap(p=>p.lessons.map(l=>l.class))))].sort((a,b)=>Number(a)-Number(b))}
 function renderHome(){
   const hour=new Date().getHours();
@@ -103,7 +107,7 @@ function getMatches(){
   });
 }
 function render(){
-  renderClassList(); renderTabs();
+  updateWeekMeta(); renderClassList(); renderTabs();
   classList.querySelectorAll('[data-class]').forEach(b=>b.classList.toggle('active',b.dataset.class===selectedClass));
   activeClassEl.textContent=selectedClass==='all'?'всех классов':selectedClass+' класса';
   const matches=getMatches(); resultCount.textContent=matches.length+' '+(matches.length===1?'урок':matches.length<5?'урока':'уроков');
@@ -116,11 +120,11 @@ function render(){
 }
 function card(item){
   const s=subjectParts(item.lesson.subject);
-  return '<article class="lesson-card"><div class="card-top"><span class="date-tag">'+item.day.short+' · '+item.day.key+' сен.</span><span class="period">'+(item.displayPeriod??displayPeriod(item.period))+'</span></div><h3>'+s.title+'</h3><div class="teacher">'+(s.detail||'')+'</div><div class="card-meta"><span class="meta-icon">◷</span>'+item.time+'<span class="meta-sep">·</span><b>'+item.lesson.class+' кл.</b>'+(item.lesson.room?'<span class="meta-sep">·</span><span>каб. '+item.lesson.room+'</span>':'')+'</div></article>'
+  return '<article class="lesson-card"><div class="card-top"><span class="date-tag">'+item.day.short+' · '+dayDateLabel(item.day)+'</span><span class="period">'+(item.displayPeriod??displayPeriod(item.period))+'</span></div><h3>'+s.title+'</h3><div class="teacher">'+(s.detail||'')+'</div><div class="card-meta"><span class="meta-icon">◷</span>'+item.time+'<span class="meta-sep">·</span><b>'+item.lesson.class+' кл.</b>'+(item.lesson.room?'<span class="meta-sep">·</span><span>каб. '+item.lesson.room+'</span>':'')+'</div></article>'
 }
 function dayColumn(day){
   const lessons=day.lessons.flatMap(p=>p.lessons.filter(l=>selectedClass==='all'||l.class===selectedClass).map(l=>({day,...p,lesson:l}))).map((item,index)=>({...item,displayPeriod:selectedClass==='all'?null:String(index)}));
-  return '<section class="day-column"><div class="day-heading"><span>'+day.short+'</span><strong>'+day.key+' сентября</strong><em>'+lessons.length+' уроков</em></div><div class="day-lessons">'+(lessons.length?lessons.map(card).join(''):'<div class="day-empty">Нет уроков</div>')+'</div></section>'
+  return '<section class="day-column"><div class="day-heading"><span>'+day.short+'</span><strong>'+dayDateLabel(day)+'</strong><em>'+lessons.length+' уроков</em></div><div class="day-lessons">'+(lessons.length?lessons.map(card).join(''):'<div class="day-empty">Нет уроков</div>')+'</div></section>'
 }
 search.addEventListener('input',render);
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();search.focus()}});
