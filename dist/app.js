@@ -7,11 +7,61 @@ const activeClassEl = document.querySelector('#activeClass');
 const resultCount = document.querySelector('#resultCount');
 let selectedClass = 'all';
 let selectedDay = 'all';
-const classes = [...new Set(DATA.flatMap(d => d.lessons.flatMap(p => p.lessons.map(l => l.class))))].sort((a,b)=>Number(a)-Number(b));
+let classes = [];
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy5WLivlQK0212iyeKHUAII-2ZDY/export?format=csv&gid=861142364';
 
 function normalize(v){return String(v||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim()}
 function subjectParts(raw){const parts=String(raw).split('\n').map(s=>s.trim()).filter(Boolean); return {title:parts[0]||raw, detail:parts.slice(1).join(' · ')}}
 function displayPeriod(period){const match=String(period).match(/^(\d+)(\s*урок)?/i); return match ? match[1] : String(period).replace(' урок','')}
+function rebuildClasses(){classes=[...new Set(DATA.flatMap(d=>d.lessons.flatMap(p=>p.lessons.map(l=>l.class))))].sort((a,b)=>Number(a)-Number(b))}
+function parseCsv(text){
+  const rows=[]; let row=[], cell='', quoted=false;
+  for(let i=0;i<text.length;i++){
+    const char=text[i], next=text[i+1];
+    if(char==='"'&&quoted&&next==='"'){cell+='"'; i++; continue}
+    if(char==='"'){quoted=!quoted; continue}
+    if(char===','&&!quoted){row.push(cell); cell=''; continue}
+    if((char==='\n'||char==='\r')&&!quoted){if(char==='\r'&&next==='\n')i++; row.push(cell); rows.push(row); row=[]; cell=''; continue}
+    cell+=char;
+  }
+  if(cell||row.length){row.push(cell); rows.push(row)}
+  return rows;
+}
+function parseLiveSchedule(csv){
+  const rows=parseCsv(csv), days=[], upperClasses=['5','6','7','8','9','10','11'], upperSubjectCols=[8,10,12,14,16,18,20];
+  let current=null;
+  rows.forEach(row=>{
+    const header=row.find(value=>/[А-ЯЁ]\s*,\s*\d{1,2}\s+[А-ЯЁа-яё]+/.test(String(value||'')));
+    if(header){
+      const date=String(header).match(/(\d{1,2})\s+[А-ЯЁа-яё]+/);
+      const dayName=String(header).split(',')[0].replace(/\s+/g,'').toLowerCase();
+      const short=dayName.includes('понедельник')?'Пн':dayName.includes('вторник')?'Вт':dayName.includes('среда')?'Ср':dayName.includes('четверг')?'Чт':'Пт';
+      current={key:date?date[1]:String(days.length+1),day:String(header).trim(),short,lessons:[]}; days.push(current); return;
+    }
+    if(!current)return;
+    const period=row.find(value=>/^\d+\s*урок$/i.test(String(value||'').trim()));
+    if(!period)return;
+    const periodIndex=row.findIndex(value=>/^\d+\s*урок$/i.test(String(value||'').trim()));
+    const time=String(row[periodIndex+1]||row[1]||'').trim();
+    const lessons=[];
+    for(let i=0;i<4;i++){const subject=String(row[periodIndex+2+i]||'').trim(); if(subject)lessons.push({class:String(i+1),subject,room:''})}
+    upperClasses.forEach((className,i)=>{const subject=String(row[upperSubjectCols[i]]||'').trim(); if(subject)lessons.push({class:className,subject,room:String(row[upperSubjectCols[i]+1]||'').trim()})});
+    if(lessons.length)current.lessons.push({period:String(period).trim(),time,lessons});
+  });
+  return days.filter(day=>day.lessons.length);
+}
+async function loadLiveSchedule(){
+  try{
+    const response=await fetch(SHEET_CSV_URL+'&_='+Date.now(),{cache:'no-store'});
+    if(!response.ok)throw new Error('Sheet request failed');
+    const live=parseLiveSchedule(await response.text());
+    if(!live.length)throw new Error('No lessons found');
+    DATA.splice(0,DATA.length,...live); rebuildClasses();
+    const source=document.querySelector('.side-note');
+    if(source)source.innerHTML='<span class="note-dot"></span><div><strong>Источник онлайн</strong><small>Обновлено при загрузке страницы</small></div>';
+    render();
+  }catch(error){console.warn('Live timetable refresh failed; using embedded fallback.',error)}
+}
 function renderClassList(){
   classList.innerHTML = '<button class="class-pill all active" data-class="all">Все классы <span>⌘</span></button>' + classes.map(c=>'<button class="class-pill" data-class="'+c+'">'+c+' класс</button>').join('');
   classList.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{selectedClass=btn.dataset.class; render()}));
@@ -53,4 +103,6 @@ function dayColumn(day){
 search.addEventListener('input',render);
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();search.focus()}});
 document.querySelector('#todayBtn').addEventListener('click',()=>{selectedDay='21';render()});
+rebuildClasses();
 render();
+loadLiveSchedule();
