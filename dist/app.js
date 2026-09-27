@@ -24,13 +24,16 @@ todayBtn.parentNode.insertBefore(homeBtn,todayBtn);
 let selectedClass = 'all';
 let selectedDay = 'all';
 let classes = [];
+let LESSON_COLORS = {};
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy5WLivlQK0212iyeKHUAII-2ZDY/export?format=csv&gid=861142364';
+const COLOR_MAP_URL = (()=>{const script=document.querySelector('script[src*="app.js"]'); return script?new URL('lesson-colors.json',script.src).href:'lesson-colors.json'})();
 
 function normalize(v){return String(v||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim()}
 function subjectParts(raw){const parts=String(raw).split('\n').map(s=>s.trim()).filter(Boolean); return {title:parts[0]||raw, detail:parts.slice(1).join(' · ')}}
 function displayPeriod(period){const match=String(period).match(/^(\d+)(\s*урок)?/i); return match ? match[1] : String(period).replace(' урок','')}
 function dayDateParts(day){const match=String(day||'').match(/(\d{1,2})\s+([А-ЯЁа-яё]+)/); return match?{day:Number(match[1]),month:match[2]}:null}
 function dayDateLabel(day){const parts=dayDateParts(day.day||day); return parts?parts.day+' '+parts.month:String(day.key||'')}
+function lessonColorKey(item){return dayDateLabel(item.day)+'|'+item.period+'|'+item.lesson.class}
 function weekRangeLabel(){const first=DATA[0]&&dayDateParts(DATA[0].day),last=DATA[DATA.length-1]&&dayDateParts(DATA[DATA.length-1].day); if(!first||!last)return 'Расписание онлайн'; const months=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']; const monthIndex=months.indexOf(first.month.toLowerCase()); if(monthIndex<0)return first.month===last.month?first.day+'–'+last.day+' '+last.month:first.day+' '+first.month+' – '+last.day+' '+last.month; const start=new Date(Date.UTC(new Date().getFullYear(),monthIndex,first.day)); const end=new Date(start); end.setUTCDate(end.getUTCDate()+6); const format=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',timeZone:'UTC'}); return format.format(start)+' – '+format.format(end)}
 function updateWeekMeta(){const range=weekRangeLabel(); const brandRange=document.querySelector('.brand small'); const eyebrow=document.querySelector('.eyebrow'); if(brandRange)brandRange.textContent=range; if(eyebrow)eyebrow.textContent='ШКОЛЬНЫЙ ПОРТАЛ / '+range}
 function rebuildClasses(){classes=[...new Set(DATA.flatMap(d=>d.lessons.flatMap(p=>p.lessons.map(l=>l.class))))].sort((a,b)=>Number(a)-Number(b))}
@@ -91,6 +94,9 @@ async function loadLiveSchedule(){
     render();
   }catch(error){console.warn('Live timetable refresh failed; using embedded fallback.',error)}
 }
+async function loadLessonColors(){
+  try{const response=await fetch(COLOR_MAP_URL+'?_='+Date.now(),{cache:'no-store'}); if(!response.ok)throw new Error('Color map request failed'); LESSON_COLORS=await response.json(); render()}catch(error){console.warn('Lesson color map failed; using default card colors.',error)}
+}
 function renderClassList(){
   classList.innerHTML = '<button class="class-pill all active" data-class="all">Все классы <span>⌘</span></button>' + classes.map(c=>'<button class="class-pill" data-class="'+c+'">'+c+' класс</button>').join('');
   classList.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{selectedClass=btn.dataset.class; render()}));
@@ -123,7 +129,8 @@ function render(){
 }
 function card(item){
   const s=subjectParts(item.lesson.subject);
-  return '<article class="lesson-card"><div class="card-top"><span class="date-tag">'+item.day.short+' · '+dayDateLabel(item.day)+'</span><span class="period">'+(item.displayPeriod??displayPeriod(item.period))+'</span></div><h3>'+s.title+'</h3><div class="teacher">'+(s.detail||'')+'</div><div class="card-meta"><span class="meta-icon">◷</span>'+item.time+'<span class="meta-sep">·</span><b>'+item.lesson.class+' кл.</b>'+(item.lesson.room?'<span class="meta-sep">·</span><span>каб. '+item.lesson.room+'</span>':'')+'</div></article>'
+  const fill=LESSON_COLORS[lessonColorKey(item)];
+  return '<article class="lesson-card"'+(fill?' style="background-color:'+fill+'"':'')+'><div class="card-top"><span class="date-tag">'+item.day.short+' · '+dayDateLabel(item.day)+'</span><span class="period">'+(item.displayPeriod??displayPeriod(item.period))+'</span></div><h3>'+s.title+'</h3><div class="teacher">'+(s.detail||'')+'</div><div class="card-meta"><span class="meta-icon">◷</span>'+item.time+'<span class="meta-sep">·</span><b>'+item.lesson.class+' кл.</b>'+(item.lesson.room?'<span class="meta-sep">·</span><span>каб. '+item.lesson.room+'</span>':'')+'</div></article>'
 }
 function dayColumn(day){
   const lessons=day.lessons.flatMap(p=>p.lessons.filter(l=>selectedClass==='all'||l.class===selectedClass).map(l=>({day,...p,lesson:l}))).map((item,index)=>({...item,displayPeriod:selectedClass==='all'?null:String(index)}));
@@ -137,3 +144,4 @@ rebuildClasses();
 render();
 renderHome();
 loadLiveSchedule();
+loadLessonColors();
