@@ -8,21 +8,25 @@ const resultCount = document.querySelector('#resultCount');
 const appShell = document.querySelector('.app-shell');
 const main = document.querySelector('.main');
 const sidebar = document.querySelector('.sidebar');
-const todayBtn = document.querySelector('#todayBtn');
+const STORAGE_KEY = 'school-timetable-state';
+const savedState = (()=>{try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null')}catch(error){return null}})();
+const hasSavedSchedule=!!(savedState&&savedState.class&&savedState.class!=='all');
+const savedDay=hasSavedSchedule?String(savedState.day||'all'):'all';
 const homeView = document.createElement('section');
 homeView.className = 'home-view';
 homeView.id = 'homeView';
 main.prepend(homeView);
-appShell.classList.add('home-mode');
+if(!hasSavedSchedule)appShell.classList.add('home-mode');
 function syncSidebar(){if(sidebar)sidebar.style.display=appShell.classList.contains('home-mode')?'none':''}
 syncSidebar();
 const homeBtn = document.createElement('button');
 homeBtn.className = 'home-btn';
 homeBtn.type = 'button';
 homeBtn.textContent = '⌂ Главная';
-todayBtn.parentNode.insertBefore(homeBtn,todayBtn);
-let selectedClass = 'all';
-let selectedDay = 'all';
+document.querySelector('.topbar').append(homeBtn);
+let selectedClass = hasSavedSchedule?String(savedState.class):'all';
+let selectedDay = hasSavedSchedule&&DATA.some(day=>day.key===savedDay)?savedDay:'all';
+let autoDayPending = false;
 let classes = [];
 let LESSON_COLORS = {};
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy5WLivlQK0212iyeKHUAII-2ZDY/export?format=csv&gid=861142364';
@@ -34,6 +38,8 @@ function displayPeriod(period){const match=String(period).match(/^(\d+)(\s*ур�
 function dayDateParts(day){const match=String(day||'').match(/(\d{1,2})\s+([А-ЯЁа-яё]+)/); return match?{day:Number(match[1]),month:match[2]}:null}
 function dayDateLabel(day){const parts=dayDateParts(day.day||day); return parts?parts.day+' '+parts.month:String(day.key||'')}
 function lessonColorKey(item){return dayDateLabel(item.day)+'|'+item.period+'|'+item.lesson.class}
+function persistState(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({class:selectedClass,day:selectedDay}))}catch(error){}}
+function todayScheduleKey(){const weekday=new Date().getDay(); if(weekday===6||weekday===2)return 'all'; const key=String(new Date().getDate()); return DATA.some(day=>day.key===key)?key:'all'}
 function weekRangeLabel(){const first=DATA[0]&&dayDateParts(DATA[0].day),last=DATA[DATA.length-1]&&dayDateParts(DATA[DATA.length-1].day); if(!first||!last)return 'Расписание онлайн'; const months=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']; const monthIndex=months.indexOf(first.month.toLowerCase()); if(monthIndex<0)return first.month===last.month?first.day+'–'+last.day+' '+last.month:first.day+' '+first.month+' – '+last.day+' '+last.month; const start=new Date(Date.UTC(new Date().getFullYear(),monthIndex,first.day)); const end=new Date(start); end.setUTCDate(end.getUTCDate()+6); const format=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',timeZone:'UTC'}); return format.format(start)+' – '+format.format(end)}
 function updateWeekMeta(){const range=weekRangeLabel(); const brandRange=document.querySelector('.brand small'); const eyebrow=document.querySelector('.eyebrow'); if(brandRange)brandRange.textContent=range; if(eyebrow)eyebrow.textContent='ШКОЛЬНЫЙ ПОРТАЛ / '+range}
 function rebuildClasses(){classes=[...new Set(DATA.flatMap(d=>d.lessons.flatMap(p=>p.lessons.map(l=>l.class))))].sort((a,b)=>Number(a)-Number(b))}
@@ -44,8 +50,8 @@ function renderHome(){
   homeView.innerHTML='<div class="home-kicker">ШКОЛЬНЫЙ ПОРТАЛ</div><div class="home-heading"><div><p class="home-greeting">'+greeting+' 👋</p><h1>Выбери свой класс</h1><p class="home-subtitle">Открой расписание сразу для нужного класса.</p></div><div class="home-date">'+date+'</div></div><div class="grade-grid" id="gradeGrid">'+Array.from({length:11},(_,i)=>{const grade=i+1;const group=grade<5?'Младшая школа':grade<10?'Средняя школа':'Старшая школа';return '<button class="grade-card" type="button" data-grade="'+grade+'"><span class="grade-number">'+grade+'</span><span class="grade-label">класс</span><small>'+group+'</small><span class="grade-arrow">→</span></button>'}).join('')+'</div><p class="home-note">Расписание обновляется из школьной таблицы при каждой загрузке страницы.</p>';
   homeView.querySelectorAll('[data-grade]').forEach(button=>button.addEventListener('click',()=>openSchedule(button.dataset.grade)));
 }
-function openSchedule(grade){selectedClass=String(grade); selectedDay='all'; search.value=''; appShell.classList.remove('home-mode'); syncSidebar(); render()}
-function openHome(){selectedClass='all'; selectedDay='all'; search.value=''; appShell.classList.add('home-mode'); syncSidebar(); renderHome()}
+function openSchedule(grade){selectedClass=String(grade); selectedDay=todayScheduleKey(); autoDayPending=true; search.value=''; appShell.classList.remove('home-mode'); syncSidebar(); render()}
+function openHome(){selectedClass='all'; selectedDay='all'; search.value=''; appShell.classList.add('home-mode'); syncSidebar(); persistState(); renderHome()}
 function parseCsv(text){
   const rows=[]; let row=[], cell='', quoted=false;
   for(let i=0;i<text.length;i++){
@@ -89,6 +95,11 @@ async function loadLiveSchedule(){
     const live=parseLiveSchedule(await response.text());
     if(!live.length)throw new Error('No lessons found');
     DATA.splice(0,DATA.length,...live); rebuildClasses();
+    if(selectedClass!=='all'){
+      if(selectedDay==='all'&&savedDay!=='all'&&DATA.some(day=>day.key===savedDay))selectedDay=savedDay;
+      if(autoDayPending&&selectedDay==='all')selectedDay=todayScheduleKey();
+    }
+    autoDayPending=false;
     const source=document.querySelector('.side-note');
     if(source)source.innerHTML='<span class="note-dot"></span><div><strong>Источник онлайн</strong><small>Обновлено при загрузке страницы</small></div>';
     render();
@@ -116,6 +127,7 @@ function getMatches(){
   });
 }
 function render(){
+  persistState();
   updateWeekMeta(); renderClassList(); renderTabs();
   classList.querySelectorAll('[data-class]').forEach(b=>b.classList.toggle('active',b.dataset.class===selectedClass));
   activeClassEl.textContent=selectedClass==='all'?'всех классов':selectedClass+' класса';
@@ -138,7 +150,6 @@ function dayColumn(day){
 }
 search.addEventListener('input',render);
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();search.focus()}});
-todayBtn.addEventListener('click',()=>{selectedDay=DATA[0]?.key||'21';appShell.classList.remove('home-mode');syncSidebar();render()});
 homeBtn.addEventListener('click',openHome);
 rebuildClasses();
 render();
