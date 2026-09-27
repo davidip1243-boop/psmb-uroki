@@ -30,6 +30,7 @@ let autoDayPending = false;
 let classes = [];
 let LESSON_COLORS = {};
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy5WLivlQK0212iyeKHUAII-2ZDY/export?format=csv&gid=861142364';
+const SHEET_XLSX_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy5WLivlQK0212iyeKHUAII-2ZDY/export?format=xlsx&gid=861142364';
 const COLOR_MAP_URL = (()=>{const script=document.querySelector('script[src*="app.js"]'); return script?new URL('lesson-colors.json',script.src).href:'lesson-colors.json'})();
 
 function normalize(v){return String(v||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim()}
@@ -38,6 +39,45 @@ function displayPeriod(period){const match=String(period).match(/^(\d+)(\s*ур�
 function dayDateParts(day){const match=String(day||'').match(/(\d{1,2})\s+([А-ЯЁа-яё]+)/); return match?{day:Number(match[1]),month:match[2]}:null}
 function dayDateLabel(day){const parts=dayDateParts(day.day||day); return parts?parts.day+' '+parts.month:String(day.key||'')}
 function lessonColorKey(item){return dayDateLabel(item.day)+'|'+item.period+'|'+item.lesson.class}
+function zipEntry(bytes,filename){
+  const view=new DataView(bytes),decoder=new TextDecoder(); let end=-1;
+  for(let i=bytes.byteLength-22;i>=Math.max(0,bytes.byteLength-65557);i--)if(view.getUint32(i,true)===0x06054b50){end=i;break}
+  if(end<0)throw new Error('Invalid timetable export');
+  const count=view.getUint16(end+10,true);let cursor=view.getUint32(end+16,true);
+  for(let i=0;i<count;i++){
+    if(view.getUint32(cursor,true)!==0x02014b50)throw new Error('Invalid timetable archive');
+    const method=view.getUint16(cursor+10,true),size=view.getUint32(cursor+20,true),nameLength=view.getUint16(cursor+28,true),extraLength=view.getUint16(cursor+30,true),commentLength=view.getUint16(cursor+32,true),localOffset=view.getUint32(cursor+42,true);
+    const name=decoder.decode(new Uint8Array(bytes,cursor+46,nameLength));
+    if(name===filename){
+      const localNameLength=view.getUint16(localOffset+26,true),localExtraLength=view.getUint16(localOffset+28,true),start=localOffset+30+localNameLength+localExtraLength,compressed=bytes.slice(start,start+size);
+      if(method===0)return decoder.decode(compressed);
+      if(method!==8||typeof DecompressionStream==='undefined')throw new Error('Unsupported timetable archive format');
+      return new Response(new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).then(response=>response.text());
+    }
+    cursor+=46+nameLength+extraLength+commentLength;
+  }
+  throw new Error('Timetable export is missing '+filename);
+}
+async function liveSheetColors(){
+  const response=await fetch(SHEET_XLSX_URL+'&_='+Date.now(),{cache:'no-store'}); if(!response.ok)throw new Error('Formatted timetable request failed');
+  const bytes=await response.arrayBuffer(),ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main',xml=name=>zipEntry(bytes,name),parse=source=>{const doc=new DOMParser().parseFromString(source,'application/xml');if(doc.querySelector('parsererror'))throw new Error('Invalid timetable XML');return doc};
+  const [sharedXml,styleXml,sheetXml]=await Promise.all([xml('xl/sharedStrings.xml'),xml('xl/styles.xml'),xml('xl/worksheets/sheet1.xml')]);
+  const sharedDoc=parse(sharedXml),styleDoc=parse(styleXml),sheetDoc=parse(sheetXml);
+  const strings=Array.from(sharedDoc.getElementsByTagNameNS(ns,'si'),item=>Array.from(item.getElementsByTagNameNS(ns,'t'),node=>node.textContent||'').join(''));
+  const fills=Array.from(styleDoc.getElementsByTagNameNS(ns,'fills')[0].children,fill=>{const pattern=fill.getElementsByTagNameNS(ns,'patternFill')[0],color=pattern&&pattern.getElementsByTagNameNS(ns,'fgColor')[0];return pattern&&pattern.getAttribute('patternType')==='solid'&&color&&color.getAttribute('rgb')?'#'+color.getAttribute('rgb').slice(-6):''});
+  const styles=Array.from(styleDoc.getElementsByTagNameNS(ns,'cellXfs')[0].children,xf=>fills[Number(xf.getAttribute('fillId')||0)]||'');
+  const valueOf=cell=>{const type=cell.getAttribute('t'),v=cell.getElementsByTagNameNS(ns,'v')[0];if(type==='inlineStr')return Array.from(cell.getElementsByTagNameNS(ns,'t'),t=>t.textContent||'').join('');if(!v)return '';const value=v.textContent||'';return type==='s'?(strings[Number(value)]||''):value};
+  const colors={},lessonColumns=[2,3,4,5,8,10,12,14,16,18,20];let dateLabel='';
+  for(const row of sheetDoc.getElementsByTagNameNS(ns,'row')){
+    const cells=Array.from(row.getElementsByTagNameNS(ns,'c')),values=new Map();
+    for(const cell of cells){const match=cell.getAttribute('r').match(/^([A-Z]+)\d+$/);if(!match)continue;let col=0;for(const letter of match[1])col=col*26+letter.charCodeAt(0)-64;values.set(col-1,{text:valueOf(cell),style:Number(cell.getAttribute('s')||0)})}
+    const rowText=Array.from(values.values(),cell=>cell.text).join(' '),date=rowText.match(/(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/i);if(date)dateLabel=date[1]+' '+date[2].toLowerCase();
+    const period=values.get(0)?.text.trim();if(!dateLabel||!/^\d+\s*урок$/i.test(period||''))continue;
+    lessonColumns.forEach((column,index)=>{const cell=values.get(column);if(!cell||!cell.text.trim())return;const color=styles[cell.style];if(color)colors[dateLabel+'|'+period+'|'+String(index<4?index+1:index+1)]=color});
+  }
+  if(!Object.keys(colors).length)throw new Error('No lesson colors found in timetable export');
+  return colors;
+}
 function persistState(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify({class:selectedClass,day:selectedDay}))}catch(error){}}
 function todayScheduleKey(){const weekday=new Date().getDay(); if(weekday===6||weekday===2)return 'all'; const key=String(new Date().getDate()); return DATA.some(day=>day.key===key)?key:'all'}
 function weekRangeLabel(){const first=DATA[0]&&dayDateParts(DATA[0].day),last=DATA[DATA.length-1]&&dayDateParts(DATA[DATA.length-1].day); if(!first||!last)return 'Расписание онлайн'; const months=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']; const monthIndex=months.indexOf(first.month.toLowerCase()); if(monthIndex<0)return first.month===last.month?first.day+'–'+last.day+' '+last.month:first.day+' '+first.month+' – '+last.day+' '+last.month; const start=new Date(Date.UTC(new Date().getFullYear(),monthIndex,first.day)); const end=new Date(start); end.setUTCDate(end.getUTCDate()+6); const format=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',timeZone:'UTC'}); return format.format(start)+' – '+format.format(end)}
@@ -106,7 +146,9 @@ async function loadLiveSchedule(){
   }catch(error){console.warn('Live timetable refresh failed; using embedded fallback.',error)}
 }
 async function loadLessonColors(){
-  try{const response=await fetch(COLOR_MAP_URL+'?_='+Date.now(),{cache:'no-store'}); if(!response.ok)throw new Error('Color map request failed'); LESSON_COLORS=await response.json(); render()}catch(error){console.warn('Lesson color map failed; using default card colors.',error)}
+  try{const response=await fetch(COLOR_MAP_URL+'?_='+Date.now(),{cache:'no-store'}); if(!response.ok)throw new Error('Color map request failed'); Object.assign(LESSON_COLORS,await response.json())}catch(error){console.warn('Saved lesson colors are unavailable.',error)}
+  try{Object.assign(LESSON_COLORS,await liveSheetColors())}catch(error){console.warn('Live lesson colors failed; using saved colors.',error)}
+  render();
 }
 function renderClassList(){
   classList.innerHTML = '<button class="class-pill all active" data-class="all">Все классы <span>⌘</span></button>' + classes.map(c=>'<button class="class-pill" data-class="'+c+'">'+c+' класс</button>').join('');
