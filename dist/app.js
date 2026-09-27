@@ -29,7 +29,7 @@ const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy
 const COLOR_MAP_URL = (()=>{const script=document.querySelector('script[src*="app.js"]'); return script?new URL('lesson-colors.json',script.src).href:'lesson-colors.json'})();
 
 function normalize(v){return String(v||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim()}
-function subjectParts(raw){const parts=String(raw).split('\n').map(s=>s.trim()).filter(Boolean); return {title:parts[0]||raw, detail:parts.slice(1).join(' · ')}}
+function subjectParts(raw){const parts=String(raw).split('\n').map(s=>s.trim()).filter(Boolean); const title=(parts[0]||raw).replace(/И\s*Т\s*О\s*Г\s*И\s+М\s*О\s*Д\s*У\s*Л\s*Я/,'И Т О Г И - М О Д У Л Я'); return {title, detail:parts.slice(1).join(' · ')}}
 function displayPeriod(period){const match=String(period).match(/^(\d+)(\s*урок)?/i); return match ? match[1] : String(period).replace(' урок','')}
 function dayDateParts(day){const match=String(day||'').match(/(\d{1,2})\s+([А-ЯЁа-яё]+)/); return match?{day:Number(match[1]),month:match[2]}:null}
 function dayDateLabel(day){const parts=dayDateParts(day.day||day); return parts?parts.day+' '+parts.month:String(day.key||'')}
