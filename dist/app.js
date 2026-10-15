@@ -37,9 +37,11 @@ let autoDayPending = false;
 let classes = [];
 let LESSON_COLORS = {};
 search.value=initialHasSchedule?(initialParams.get('q')||''):'';
-const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy5WLivlQK0212iyeKHUAII-2ZDY/export?format=csv&gid=861142364';
-const SHEET_XLSX_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy5WLivlQK0212iyeKHUAII-2ZDY/export?format=xlsx&gid=861142364';
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy5WLivlQK0212iyeKHUAII-2ZDY/export?format=csv&gid=2045912974';
+const SHEET_XLSX_URL = 'https://docs.google.com/spreadsheets/d/1WusumZx4L43imsbdy5WLivlQK0212iyeKHUAII-2ZDY/export?format=xlsx&gid=2045912974';
 const COLOR_MAP_URL = (()=>{const script=document.querySelector('script[src*="app.js"]'); return script?new URL('lesson-colors.json',script.src).href:'lesson-colors.json'})();
+const LIVE_REFRESH_MS = 5 * 60 * 1000;
+let liveRefreshInProgress = false;
 
 function normalize(v){return String(v||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim()}
 function subjectParts(raw){const parts=String(raw).split('\n').map(s=>s.trim()).filter(Boolean); const title=(parts[0]||raw).replace(/И\s*Т\s*О\s*Г\s*И\s+М\s*О\s*Д\s*У\s*Л\s*Я/,'И Т О Г И - М О Д У Л Я'); return {title, detail:parts.slice(1).join(' · ')}}
@@ -136,7 +138,7 @@ function parseLiveSchedule(csv){
     if(header){
       const date=String(header).match(/(\d{1,2})\s+[А-ЯЁа-яё]+/);
       const dayName=String(header).split(',')[0].replace(/\s+/g,'').toLowerCase();
-      const short=dayName.includes('понедельник')?'Пн':dayName.includes('вторник')?'Вт':dayName.includes('среда')?'Ср':dayName.includes('четверг')?'Чт':'Пт';
+      const short=dayName.includes('понедельник')?'Пн':dayName.includes('вторник')?'Вт':dayName.includes('среда')?'Ср':dayName.includes('четверг')?'Чт':dayName.includes('суббота')?'Сб':dayName.includes('воскресенье')?'Вс':'Пт';
       current={key:date?date[1]:String(days.length+1),day:String(header).trim(),short,lessons:[]}; days.push(current); return;
     }
     if(!current)return;
@@ -166,9 +168,14 @@ async function loadLiveSchedule(){
     pendingUrlDay=null;
     autoDayPending=false;
     const source=document.querySelector('.side-note');
-    if(source)source.innerHTML='<span class="note-dot"></span><div><strong>Источник онлайн</strong><small>Обновлено при загрузке страницы</small></div>';
+    if(source)source.innerHTML='<span class="note-dot"></span><div><strong>Источник онлайн</strong><small>Обновлено в '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+'</small></div>';
     render();
   }catch(error){console.warn('Live timetable refresh failed; using embedded fallback.',error)}
+}
+async function refreshLiveData(){
+  if(liveRefreshInProgress)return;
+  liveRefreshInProgress=true;
+  try{await loadLiveSchedule(); await loadLessonColors()}finally{liveRefreshInProgress=false}
 }
 async function loadLessonColors(){
   try{const response=await fetch(COLOR_MAP_URL+'?_='+Date.now(),{cache:'no-store'}); if(!response.ok)throw new Error('Color map request failed'); Object.assign(LESSON_COLORS,await response.json())}catch(error){console.warn('Saved lesson colors are unavailable.',error)}
@@ -222,5 +229,6 @@ window.addEventListener('popstate',restoreUrlState);
 rebuildClasses();
 render();
 renderHome();
-loadLiveSchedule();
-loadLessonColors();
+refreshLiveData();
+setInterval(refreshLiveData,LIVE_REFRESH_MS);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshLiveData()});

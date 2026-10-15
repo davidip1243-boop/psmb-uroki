@@ -1,0 +1,26 @@
+server {
+    listen 80;
+    listen [::]:80;
+
+    # Replace with the real domain name.
+    server_name example.ru www.example.ru;
+
+    # Upload the repository's dist/ directory here.
+    root /var/www/psmb-uroki/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location ~* \.(?:css|js)$ {
+        expires 1h;
+        add_header Cache-Control "public, max-age=3600";
+        try_files $uri =404;
+    }
+
+    location ~* \.(?:html)$ {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+}
